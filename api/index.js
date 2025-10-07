@@ -33,20 +33,34 @@ app.get("/api/hiru-news", async (req, res) => {
               .json({ error: "No data received from Hiru News" });
           }
 
+          // 🧹 Clean broken HTML tags to avoid parse errors
+          const cleanedXml = data
+            .replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, "&amp;")
+            .replace(/<\/?br ?\/?>/g, "")
+            .replace(/<script[\s\S]*?<\/script>/gi, "")
+            .replace(/<style[\s\S]*?<\/style>/gi, "");
+
           const parser = new xml2js.Parser({
             explicitArray: false,
             ignoreAttrs: true,
-            trim: true
+            trim: true,
+            strict: false // 💪 Ignore invalid closing tags
           });
 
-          parser.parseString(data, (err, result) => {
+          parser.parseString(cleanedXml, (err, result) => {
             if (err) {
               console.error("XML parse error:", err);
               return res.status(500).json({ error: err.message });
             }
 
             try {
-              const items = result.rss.channel.item;
+              const items = result?.rss?.channel?.item;
+              if (!items) {
+                return res
+                  .status(500)
+                  .json({ error: "No news items found in feed" });
+              }
+
               const articles = Array.isArray(items) ? items : [items];
 
               const news = articles.map((item) => ({
