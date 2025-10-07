@@ -33,7 +33,7 @@ app.get("/api/hiru-news", async (req, res) => {
               .json({ error: "No data received from Hiru News" });
           }
 
-          // 🧹 Clean broken HTML tags to avoid parse errors
+          // 🧹 Clean up bad HTML & XML characters
           const cleanedXml = data
             .replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, "&amp;")
             .replace(/<\/?br ?\/?>/g, "")
@@ -44,7 +44,7 @@ app.get("/api/hiru-news", async (req, res) => {
             explicitArray: false,
             ignoreAttrs: true,
             trim: true,
-            strict: false // 💪 Ignore invalid closing tags
+            strict: false
           });
 
           parser.parseString(cleanedXml, (err, result) => {
@@ -54,20 +54,38 @@ app.get("/api/hiru-news", async (req, res) => {
             }
 
             try {
-              const items = result?.rss?.channel?.item;
+              // 🧠 Try different feed structures
+              const channel =
+                result?.rss?.channel ||
+                result?.feed ||
+                result?.rdf ||
+                result?.RDF;
+
+              if (!channel) {
+                console.error("Feed structure not recognized:", result);
+                return res
+                  .status(500)
+                  .json({ error: "Feed format not recognized" });
+              }
+
+              const items = channel.item || channel.entry;
               if (!items) {
+                console.error("No news items found:", channel);
                 return res
                   .status(500)
                   .json({ error: "No news items found in feed" });
               }
 
               const articles = Array.isArray(items) ? items : [items];
-
               const news = articles.map((item) => ({
-                title: item.title,
-                link: item.link,
-                published: item.pubDate,
-                summary: item.description
+                title: item.title || "No title",
+                link: item.link?.href || item.link || "#",
+                published: item.pubDate || item.updated || "Unknown date",
+                summary:
+                  item.description ||
+                  item.summary ||
+                  item.content ||
+                  "No summary available"
               }));
 
               res.json(news);
