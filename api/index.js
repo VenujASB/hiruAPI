@@ -1,5 +1,4 @@
 import express from "express";
-import xml2js from "xml2js";
 import cors from "cors";
 import https from "https";
 
@@ -20,87 +19,51 @@ app.get("/api/hiru-news", async (req, res) => {
         }
       },
       (response) => {
-        let data = "";
+        let xml = "";
 
         response.on("data", (chunk) => {
-          data += chunk;
+          xml += chunk;
         });
 
         response.on("end", () => {
-          if (!data) {
+          if (!xml) {
             return res
               .status(500)
               .json({ error: "No data received from Hiru News" });
           }
 
-          // 🧹 Clean up bad HTML & XML characters
-          const cleanedXml = data
-            .replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, "&amp;")
-            .replace(/<\/?br ?\/?>/g, "")
-            .replace(/<script[\s\S]*?<\/script>/gi, "")
-            .replace(/<style[\s\S]*?<\/style>/gi, "");
+          // Clean and normalize XML a bit
+          xml = xml.replace(/\r?\n|\r/g, "").trim();
 
-          const parser = new xml2js.Parser({
-            explicitArray: false,
-            ignoreAttrs: true,
-            trim: true,
-            strict: false
+          // Extract each <item>...</item>
+          const items = xml.match(/<item>[\s\S]*?<\/item>/g);
+          if (!items) {
+            return res
+              .status(500)
+              .json({ error: "No news items found in Hiru News feed" });
+          }
+
+          // Parse each <item>
+          const news = items.map((item) => {
+            const getTag = (tag) => {
+              const match = item.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
+              return match ? match[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "";
+            };
+
+            return {
+              title: getTag("title"),
+              link: getTag("link"),
+              published: getTag("pubDate"),
+              summary: getTag("description")
+            };
           });
 
-          parser.parseString(cleanedXml, (err, result) => {
-            if (err) {
-              console.error("XML parse error:", err);
-              return res.status(500).json({ error: err.message });
-            }
-
-            try {
-              // 🧠 Try different feed structures
-              const channel =
-                result?.rss?.channel ||
-                result?.feed ||
-                result?.rdf ||
-                result?.RDF;
-
-              if (!channel) {
-                console.error("Feed structure not recognized:", result);
-                return res
-                  .status(500)
-                  .json({ error: "Feed format not recognized" });
-              }
-
-              const items = channel.item || channel.entry;
-              if (!items) {
-                console.error("No news items found:", channel);
-                return res
-                  .status(500)
-                  .json({ error: "No news items found in feed" });
-              }
-
-              const articles = Array.isArray(items) ? items : [items];
-              const news = articles.map((item) => ({
-                title: item.title || "No title",
-                link: item.link?.href || item.link || "#",
-                published: item.pubDate || item.updated || "Unknown date",
-                summary:
-                  item.description ||
-                  item.summary ||
-                  item.content ||
-                  "No summary available"
-              }));
-
-              res.json(news);
-            } catch (e) {
-              console.error("Processing error:", e);
-              res
-                .status(500)
-                .json({ error: "Error processing Hiru News articles" });
-            }
-          });
+          res.json(news);
         });
       }
     ).on("error", (err) => {
-      console.error("HTTPS request error:", err);
-      res.status(500).json({ error: "Failed to fetch RSS feed" });
+      console.error("HTTPS error:", err);
+      res.status(500).json({ error: "Failed to fetch Hiru News feed" });
     });
   } catch (error) {
     console.error("Unexpected error:", error);
