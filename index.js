@@ -1,13 +1,19 @@
 import express from "express";
 import cors from "cors";
-import fetch from "node-fetch";
 
 const app = express();
 app.use(cors());
 
+// Root route for testing
+app.get("/", (req, res) => {
+  res.send("✅ Hiru News API is running!");
+});
+
 app.get("/api/hiru-news", async (req, res) => {
   try {
+    // RSS feed proxy — avoids block by Hiru News
     const proxyUrl = "https://api.rss2json.com/v1/api.json?rss_url=https://www.hirunews.lk/rss";
+
     const response = await fetch(proxyUrl);
     const data = await response.json();
 
@@ -29,4 +35,5 @@ app.get("/api/hiru-news", async (req, res) => {
   }
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("Server running"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
