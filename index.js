@@ -1,43 +1,32 @@
 import express from "express";
 import cors from "cors";
-import Parser from "rss-parser";
+import fetch from "node-fetch";
 
 const app = express();
 app.use(cors());
 
-const parser = new Parser({
-  headers: {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
-    "Accept-Language": "en-US,en;q=0.9",
-  },
-  timeout: 10000,
-});
-
-app.get("/", (req, res) => {
-  res.send("✅ Hiru News API is running!");
-});
-
 app.get("/api/hiru-news", async (req, res) => {
   try {
-    const feed = await parser.parseURL("https://www.hirunews.lk/rss");
-    if (!feed?.items?.length) {
-      return res.status(500).json({ error: "No articles found in feed" });
+    const proxyUrl = "https://api.rss2json.com/v1/api.json?rss_url=https://www.hirunews.lk/rss";
+    const response = await fetch(proxyUrl);
+    const data = await response.json();
+
+    if (!data.items) {
+      return res.status(500).json({ error: "No news items found" });
     }
 
-    const news = feed.items.map((item) => ({
-      title: item.title || "Untitled",
-      link: item.link || "",
-      published: item.pubDate || item.isoDate || "",
-      summary: item.contentSnippet || item.content || "",
+    const news = data.items.map(item => ({
+      title: item.title,
+      link: item.link,
+      published: item.pubDate,
+      summary: item.description
     }));
 
     res.json(news);
   } catch (error) {
-    console.error("Error fetching RSS:", error.message);
+    console.error(error);
     res.status(500).json({ error: "Failed to fetch or parse Hiru News feed" });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(process.env.PORT || 3000, () => console.log("Server running"));
