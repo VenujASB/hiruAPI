@@ -1,55 +1,77 @@
-
 import express from "express";
 import xml2js from "xml2js";
 import cors from "cors";
+import https from "https";
 
 const app = express();
 app.use(cors());
 
 app.get("/api/hiru-news", async (req, res) => {
+  const feedUrl = "https://www.hirunews.lk/rss";
+
   try {
-    const feedUrl = "https://www.hirunews.lk/rss";
-    const response = await fetch(feedUrl);
+    https.get(
+      feedUrl,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36",
+          Accept: "application/xml,text/xml;q=0.9,*/*;q=0.8"
+        }
+      },
+      (response) => {
+        let data = "";
 
-    if (!response.ok) {
-      return res.status(500).json({ error: "Failed to fetch RSS feed" });
-    }
+        response.on("data", (chunk) => {
+          data += chunk;
+        });
 
-    const xml = await response.text();
+        response.on("end", () => {
+          if (!data) {
+            return res
+              .status(500)
+              .json({ error: "No data received from Hiru News" });
+          }
 
-    const parser = new xml2js.Parser({
-      explicitArray: false,
-      ignoreAttrs: true,
-      trim: true,
-      normalize: true,
-      normalizeTags: true
-    });
+          const parser = new xml2js.Parser({
+            explicitArray: false,
+            ignoreAttrs: true,
+            trim: true
+          });
 
-    parser.parseString(xml, (err, result) => {
-      if (err) {
-        console.error("XML parse error:", err);
-        return res.status(500).json({ error: err.message });
+          parser.parseString(data, (err, result) => {
+            if (err) {
+              console.error("XML parse error:", err);
+              return res.status(500).json({ error: err.message });
+            }
+
+            try {
+              const items = result.rss.channel.item;
+              const articles = Array.isArray(items) ? items : [items];
+
+              const news = articles.map((item) => ({
+                title: item.title,
+                link: item.link,
+                published: item.pubDate,
+                summary: item.description
+              }));
+
+              res.json(news);
+            } catch (e) {
+              console.error("Processing error:", e);
+              res
+                .status(500)
+                .json({ error: "Error processing Hiru News articles" });
+            }
+          });
+        });
       }
-
-      try {
-        const items = result.rss.channel.item;
-        const articles = Array.isArray(items) ? items : [items];
-
-        const news = articles.map(item => ({
-          title: item.title,
-          link: item.link,
-          published: item.pubDate,
-          summary: item.description
-        }));
-
-        res.json(news);
-      } catch (parseError) {
-        console.error("Article mapping error:", parseError);
-        res.status(500).json({ error: "Error processing articles" });
-      }
+    ).on("error", (err) => {
+      console.error("HTTPS request error:", err);
+      res.status(500).json({ error: "Failed to fetch RSS feed" });
     });
   } catch (error) {
-    console.error("Fetch error:", error);
+    console.error("Unexpected error:", error);
     res.status(500).json({ error: error.message });
   }
 });
